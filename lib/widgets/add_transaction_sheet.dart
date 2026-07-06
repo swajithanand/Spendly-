@@ -135,41 +135,33 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
               ),
             ),
 
+            // Details scroll away; amount + keypad + save stay pinned below.
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   children: [
-                    // Amount display
                     _AmountDisplay(),
-                    const SizedBox(height: 14),
-
-                    // Keypad
-                    _Keypad(),
-                    const SizedBox(height: 14),
-
-                    // Category chips
+                    const SizedBox(height: 12),
                     _CategoryChips(),
                     const SizedBox(height: 12),
-
-                    // Label
-                    _LabelField(ctrl: _labelCtrl),
-                    const SizedBox(height: 12),
-
-                    // Subcategory (auto-detected, tappable to override)
                     _SubcategoryChips(),
                     const SizedBox(height: 12),
-
-                    // Date
-                    _DateRow(),
-                    const SizedBox(height: 14),
-
-                    // Save button
-                    _SaveButton(onTap: _save, isEdit: isEdit),
-                    const SizedBox(height: 16),
+                    _LabelDateRow(ctrl: _labelCtrl),
                   ],
                 ),
               ),
+            ),
+
+            // Keypad pinned at the bottom, in the thumb zone
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: _Keypad(),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+              child: _SaveButton(onTap: _save, isEdit: isEdit),
             ),
           ],
         ),
@@ -190,7 +182,7 @@ class _AmountDisplay extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: AppConstants.cardDecoration,
-      padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 22),
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 22),
       child: Column(
         children: [
           Text('AMOUNT', style: AppTextStyles.eyebrow),
@@ -234,7 +226,7 @@ class _Keypad extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 8,
       crossAxisSpacing: 8,
-      childAspectRatio: 1.7,
+      childAspectRatio: 1.9,
       children: _keys.map((k) => _Key(k: k)).toList(),
     );
   }
@@ -286,78 +278,49 @@ class _CategoryChips extends StatelessWidget {
         children: [
           Text('CATEGORY', style: AppTextStyles.eyebrow),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: state.categories.map((cat) {
-              final active = cat.id == state.draft.categoryId;
-              return GestureDetector(
-                onTap: () => state.draftSetCategory(cat.id),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 130),
-                  padding: const EdgeInsets.fromLTRB(12, 9, 14, 9),
-                  decoration: BoxDecoration(
-                    color: active ? AppColors.surface : AppColors.surface2,
-                    border: Border.all(
-                      color: active ? AppColors.ink : Colors.transparent,
-                      width: 1.5,
+          SizedBox(
+            height: 36,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: state.categories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (_, i) {
+                final cat = state.categories[i];
+                final active = cat.id == state.draft.categoryId;
+                return GestureDetector(
+                  onTap: () => state.draftSetCategory(cat.id),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 130),
+                    padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
+                    decoration: BoxDecoration(
+                      color: active ? AppColors.surface : AppColors.surface2,
+                      border: Border.all(
+                        color: active ? AppColors.ink : Colors.transparent,
+                        width: 1.5,
+                      ),
+                      borderRadius: BorderRadius.circular(999),
                     ),
-                    borderRadius: BorderRadius.circular(999),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 9,
+                          height: 9,
+                          decoration: BoxDecoration(
+                              color: cat.color, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          cat.name,
+                          style: AppTextStyles.bodySmallMedium
+                              .copyWith(color: AppColors.ink2),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 9,
-                        height: 9,
-                        decoration: BoxDecoration(
-                            color: cat.color, shape: BoxShape.circle),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        cat.name,
-                        style: AppTextStyles.bodySmallMedium
-                            .copyWith(color: AppColors.ink2),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Label field ───────────────────────────────────────────────────────────────
-
-class _LabelField extends StatelessWidget {
-  final TextEditingController ctrl;
-  const _LabelField({required this.ctrl});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: AppConstants.cardDecoration,
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('LABEL', style: AppTextStyles.eyebrow),
-          const SizedBox(height: 8),
-          TextField(
-            controller: ctrl,
-            style: AppTextStyles.body,
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              hintText: 'e.g. Groceries, Spotify…',
-              hintStyle: AppTextStyles.body.copyWith(color: AppColors.muted2),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(vertical: 2),
+                );
+              },
             ),
-            onChanged: (v) => context.read<AppState>().draftSetLabel(v),
           ),
         ],
       ),
@@ -368,43 +331,96 @@ class _LabelField extends StatelessWidget {
 // ── Subcategory chips ─────────────────────────────────────────────────────────
 
 class _SubcategoryChips extends StatelessWidget {
+  static const _emojiChoices = [
+    '😀', '😎', '🥳', '🤑', '☕', '🍕', '🍜', '🍺',
+    '🎮', '🎁', '🐶', '🐱', '👶', '💄', '🔧', '🧾',
+    '⚽', '🎸', '🌱', '💼', '✂️', '❤️', '⭐', '🏷️',
+  ];
+
   Future<void> _createSubcategory(BuildContext context) async {
     final state = context.read<AppState>();
     final ctrl = TextEditingController();
-    final name = await showDialog<String>(
+    var emoji = _emojiChoices.last;
+    final result = await showDialog<(String, String)>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('New subcategory',
-            style: AppTextStyles.displayMedium.copyWith(fontSize: 22)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          style: AppTextStyles.body,
-          decoration: InputDecoration(
-            hintText: 'e.g. Pets, Kids, Hobbies…',
-            hintStyle: AppTextStyles.body.copyWith(color: AppColors.muted2),
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('New subcategory',
+              style: AppTextStyles.displayMedium.copyWith(fontSize: 22)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                style: AppTextStyles.body,
+                decoration: InputDecoration(
+                  hintText: 'e.g. Pets, Kids, Hobbies…',
+                  hintStyle: AppTextStyles.body.copyWith(color: AppColors.muted2),
+                ),
+                onSubmitted: (v) => Navigator.pop(dialogCtx, (v, emoji)),
+              ),
+              const SizedBox(height: 16),
+              Text('ICON', style: AppTextStyles.eyebrow),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: 280,
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _emojiChoices.map((e) {
+                    final selected = e == emoji;
+                    return GestureDetector(
+                      onTap: () => setDialogState(() => emoji = e),
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? AppColors.surface2
+                              : Colors.transparent,
+                          border: Border.all(
+                            color: selected
+                                ? AppColors.ink
+                                : AppColors.hairline,
+                            width: selected ? 1.5 : 1,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                            child:
+                                Text(e, style: const TextStyle(fontSize: 18))),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
           ),
-          onSubmitted: (v) => Navigator.pop(dialogCtx, v),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: Text('Cancel',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.muted)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, (ctrl.text, emoji)),
+              child: Text('Add',
+                  style:
+                      AppTextStyles.bodyMedium.copyWith(color: AppColors.ink)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: Text('Cancel',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.muted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, ctrl.text),
-            child: Text('Add',
-                style: AppTextStyles.bodyMedium.copyWith(color: AppColors.ink)),
-          ),
-        ],
       ),
     );
-    if (name != null) state.addCustomSubcategory(name);
+    if (result != null) {
+      state.addCustomSubcategory(result.$1, emoji: result.$2);
+    }
     ctrl.dispose();
   }
 
@@ -490,12 +506,20 @@ class _SubcategoryChips extends StatelessWidget {
                       color: active ? AppColors.ink : AppColors.surface2,
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: Text(
-                      name,
-                      style: AppTextStyles.bodySmallMedium.copyWith(
-                          color: active
-                              ? const Color(0xFFFAF8F2)
-                              : AppColors.ink2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(state.subcatEmoji(name),
+                            style: const TextStyle(fontSize: 13)),
+                        const SizedBox(width: 5),
+                        Text(
+                          name,
+                          style: AppTextStyles.bodySmallMedium.copyWith(
+                              color: active
+                                  ? const Color(0xFFFAF8F2)
+                                  : AppColors.ink2),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -508,10 +532,13 @@ class _SubcategoryChips extends StatelessWidget {
   }
 }
 
-// ── Date row ──────────────────────────────────────────────────────────────────
+// ── Label + date row ──────────────────────────────────────────────────────────
 
-class _DateRow extends StatelessWidget {
-  Future<void> _pick(BuildContext context) async {
+class _LabelDateRow extends StatelessWidget {
+  final TextEditingController ctrl;
+  const _LabelDateRow({required this.ctrl});
+
+  Future<void> _pickDate(BuildContext context) async {
     final state = context.read<AppState>();
     final picked = await showDatePicker(
       context: context,
@@ -525,27 +552,71 @@ class _DateRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final date = context.watch<AppState>().draft.date ?? DateTime.now();
-    return GestureDetector(
-      onTap: () => _pick(context),
-      child: Container(
-        decoration: AppConstants.cardDecoration,
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-        child: Row(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('DATE', style: AppTextStyles.eyebrow),
-                const SizedBox(height: 4),
-                Text(DateFormat('EEE, MMM d, yyyy').format(date),
-                    style: AppTextStyles.bodyMedium),
-              ],
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Label
+          Expanded(
+            child: Container(
+              decoration: AppConstants.cardDecoration,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('LABEL', style: AppTextStyles.eyebrow),
+                  const SizedBox(height: 6),
+                  // Flexible absorbs sub-pixel height rounding inside
+                  // IntrinsicHeight so the card never overflows.
+                  Flexible(
+                    child: TextField(
+                      controller: ctrl,
+                      style: AppTextStyles.body,
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'e.g. Groceries, Spotify…',
+                        hintStyle: AppTextStyles.body
+                            .copyWith(color: AppColors.muted2),
+                        isDense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 2),
+                      ),
+                      onChanged: (v) =>
+                          context.read<AppState>().draftSetLabel(v),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const Spacer(),
-            const Icon(Icons.calendar_today_outlined,
-                size: 18, color: AppColors.muted),
-          ],
-        ),
+          ),
+          const SizedBox(width: 10),
+
+          // Date
+          GestureDetector(
+            onTap: () => _pickDate(context),
+            child: Container(
+              decoration: AppConstants.cardDecoration,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('DATE', style: AppTextStyles.eyebrow),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(DateFormat('MMM d').format(date),
+                          style: AppTextStyles.bodyMedium),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.calendar_today_outlined,
+                          size: 14, color: AppColors.muted),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

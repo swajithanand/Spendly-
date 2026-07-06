@@ -48,6 +48,8 @@ class AppState extends ChangeNotifier {
 
   // Budget
   double income = 4800;
+  String paySchedule = 'Monthly';
+  String cycleStart = '1st';
   List<CategoryModel> categories = [];
 
   // Transactions
@@ -55,6 +57,9 @@ class AppState extends ChangeNotifier {
 
   // User-created subcategories (shown alongside the built-in ones)
   List<String> customSubcategories = [];
+
+  // Emoji chosen for user-created subcategories (name → emoji)
+  Map<String, String> customSubcatEmojis = {};
 
   // Transaction draft
   DraftTx draft = DraftTx();
@@ -83,6 +88,12 @@ class AppState extends ChangeNotifier {
   static const _kCategories = 'categories';
   static const _kTransactions = 'transactions';
   static const _kCustomSubcats = 'customSubcategories';
+  static const _kCustomSubcatEmojis = 'customSubcatEmojis';
+  static const _kUserName = 'userName';
+  static const _kUserEmail = 'userEmail';
+  static const _kUserCurrency = 'userCurrency';
+  static const _kPaySchedule = 'paySchedule';
+  static const _kCycleStart = 'cycleStart';
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -90,6 +101,16 @@ class AppState extends ChangeNotifier {
     final catsJson = prefs.getString(_kCategories);
     final txsJson = prefs.getString(_kTransactions);
     customSubcategories = prefs.getStringList(_kCustomSubcats) ?? [];
+    final emojisJson = prefs.getString(_kCustomSubcatEmojis);
+    if (emojisJson != null) {
+      customSubcatEmojis =
+          Map<String, String>.from(jsonDecode(emojisJson) as Map);
+    }
+    user.name = prefs.getString(_kUserName) ?? user.name;
+    user.email = prefs.getString(_kUserEmail) ?? user.email;
+    user.currency = prefs.getString(_kUserCurrency) ?? user.currency;
+    paySchedule = prefs.getString(_kPaySchedule) ?? paySchedule;
+    cycleStart = prefs.getString(_kCycleStart) ?? cycleStart;
 
     if (incomeVal != null && catsJson != null && txsJson != null) {
       income = incomeVal;
@@ -132,6 +153,12 @@ class AppState extends ChangeNotifier {
     await prefs.setString(
         _kTransactions, jsonEncode(transactions.map((t) => t.toJson()).toList()));
     await prefs.setStringList(_kCustomSubcats, customSubcategories);
+    await prefs.setString(_kCustomSubcatEmojis, jsonEncode(customSubcatEmojis));
+    await prefs.setString(_kUserName, user.name);
+    await prefs.setString(_kUserEmail, user.email);
+    await prefs.setString(_kUserCurrency, user.currency);
+    await prefs.setString(_kPaySchedule, paySchedule);
+    await prefs.setString(_kCycleStart, cycleStart);
   }
 
   // ── Auth ────────────────────────────────────────────────
@@ -171,6 +198,18 @@ class AppState extends ChangeNotifier {
 
   void setIncome(double v) {
     income = v;
+    _save();
+    notifyListeners();
+  }
+
+  void setPaySchedule(String v) {
+    paySchedule = v;
+    _save();
+    notifyListeners();
+  }
+
+  void setCycleStart(String v) {
+    cycleStart = v;
     _save();
     notifyListeners();
   }
@@ -336,7 +375,7 @@ class AppState extends ChangeNotifier {
 
   /// Adds a user-defined subcategory (if new) and selects it in the draft.
   /// Returns the canonical name, or null when the input is empty.
-  String? addCustomSubcategory(String name) {
+  String? addCustomSubcategory(String name, {String emoji = ''}) {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
     final existing = allSubcategories.where(
@@ -344,13 +383,18 @@ class AppState extends ChangeNotifier {
     final canonical = existing.isNotEmpty ? existing.first : trimmed;
     if (existing.isEmpty) {
       customSubcategories.add(trimmed);
-      _save();
     }
+    if (emoji.isNotEmpty) customSubcatEmojis[canonical] = emoji;
+    if (existing.isEmpty || emoji.isNotEmpty) _save();
     draft.subcategory = canonical;
     draft.subcatManual = true;
     notifyListeners();
     return canonical;
   }
+
+  /// Emoji for a subcategory: user's choice first, then built-in default.
+  String subcatEmoji(String name) =>
+      customSubcatEmojis[name] ?? SmartCategorizer.emojis[name] ?? '🏷️';
 
   void draftSetDate(DateTime d) {
     final old = draft.date ?? DateTime.now();
@@ -440,6 +484,7 @@ class AppState extends ChangeNotifier {
     if (name != null) user.name = name;
     if (email != null) user.email = email;
     if (currency != null) user.currency = currency;
+    _save();
     notifyListeners();
   }
 

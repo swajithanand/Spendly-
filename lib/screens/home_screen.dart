@@ -17,7 +17,7 @@ class HomeScreen extends StatelessWidget {
     final state = context.watch<AppState>();
     final monthTxs = state.filtered('month');
     final totalSpent = monthTxs.fold(0.0, (s, t) => s + t.amount);
-    final remaining = (state.income - totalSpent).clamp(0.0, double.infinity);
+    final remaining = state.income - totalSpent;
 
     return SafeArea(
       child: CustomScrollView(
@@ -200,11 +200,18 @@ class _OverviewCard extends StatelessWidget {
                 style: AppTextStyles.bodySmall
                     .copyWith(color: const Color(0x60FAF8F2)),
               ),
-              TextSpan(
-                text: '$sym${fmt.format(remaining)} remaining',
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: const Color(0x99FAF8F2)),
-              ),
+              if (remaining >= 0)
+                TextSpan(
+                  text: '$sym${fmt.format(remaining)} remaining',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: const Color(0x99FAF8F2)),
+                )
+              else
+                TextSpan(
+                  text: '$sym${fmt.format(remaining.abs())} over income',
+                  style: AppTextStyles.bodySmallMedium
+                      .copyWith(color: AppColors.dangerOnDark),
+                ),
             ]),
           ),
           const SizedBox(height: 16),

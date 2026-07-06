@@ -954,5 +954,84 @@ void main() {
       expect(s2.transactions.length, countBefore + 1);
       expect(s2.transactions.last.amount, 99.0);
     });
+
+    test('profile, pay schedule and cycle start persist across launches',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final s1 = AppState();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      s1.updateProfile(name: 'Priya S', email: 'p@x.com', currency: 'INR');
+      s1.setPaySchedule('Weekly');
+      s1.setCycleStart('15th');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final s2 = AppState();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(s2.user.name, 'Priya S');
+      expect(s2.user.email, 'p@x.com');
+      expect(s2.user.currency, 'INR');
+      expect(s2.paySchedule, 'Weekly');
+      expect(s2.cycleStart, '15th');
+    });
+  });
+
+  // ── Subcategory emojis ────────────────────────────────────────────────────
+
+  group('Subcategory emojis', () {
+    test('built-in subcategories have default emojis', () async {
+      final s = await makeState();
+      expect(s.subcatEmoji('Groceries'), '🛒');
+      expect(s.subcatEmoji('Travel'), '✈️');
+      for (final name in SmartCategorizer.subcategories) {
+        expect(s.subcatEmoji(name), isNotEmpty);
+        expect(s.subcatEmoji(name), isNot('🏷️'),
+            reason: '$name should have its own default emoji');
+      }
+    });
+
+    test('unknown subcategory falls back to the tag emoji', () async {
+      final s = await makeState();
+      expect(s.subcatEmoji('Nonexistent'), '🏷️');
+    });
+
+    test('custom subcategory stores the chosen emoji', () async {
+      final s = await makeState();
+      s.openDraft();
+      s.addCustomSubcategory('Pets', emoji: '🐶');
+      expect(s.subcatEmoji('Pets'), '🐶');
+      expect(s.draft.subcategory, 'Pets');
+    });
+
+    test('custom emoji overrides a built-in default', () async {
+      final s = await makeState();
+      s.openDraft();
+      s.addCustomSubcategory('Groceries', emoji: '🥦');
+      expect(s.subcatEmoji('Groceries'), '🥦');
+      // Reusing a built-in name must not duplicate it in the picker list.
+      expect(
+          s.allSubcategories.where((n) => n == 'Groceries').length, 1);
+    });
+
+    test('custom emojis persist across launches', () async {
+      SharedPreferences.setMockInitialValues({});
+      final s1 = AppState();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      s1.openDraft();
+      s1.addCustomSubcategory('Kids', emoji: '👶');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final s2 = AppState();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(s2.subcatEmoji('Kids'), '👶');
+      expect(s2.customSubcategories, contains('Kids'));
+    });
   });
 }

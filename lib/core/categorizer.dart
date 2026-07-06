@@ -65,6 +65,23 @@ class SmartCategorizer {
   /// All subcategory names the categorizer knows about, for pickers.
   static List<String> get subcategories => _keywords.keys.toList();
 
+  /// Default emoji for each built-in subcategory.
+  static const Map<String, String> emojis = {
+    'Groceries': '🛒',
+    'Dining': '🍽️',
+    'Transport': '🚗',
+    'Utilities': '💡',
+    'Housing': '🏠',
+    'Subscriptions': '📺',
+    'Entertainment': '🎬',
+    'Health': '💊',
+    'Shopping': '🛍️',
+    'Travel': '✈️',
+    'Investments': '📈',
+    'Savings': '🐷',
+    'Education': '📚',
+  };
+
   /// Suggests a subcategory for [label]. Checks the user's [history] first
   /// (most recent transaction with the same normalized label wins), then
   /// falls back to keyword matching. Returns '' when nothing matches.

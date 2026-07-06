@@ -44,12 +44,7 @@ class _SetupScreenState extends State<SetupScreen>
 
   void _done() {
     final s = context.read<AppState>();
-    if (s.totalPct != 100) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Categories must add up to 100%')),
-      );
-      return;
-    }
+    if (s.totalPct != 100) return;
     s.completeSetup();
     Navigator.pushReplacementNamed(context, '/main');
   }
@@ -156,20 +151,40 @@ class _SetupScreenState extends State<SetupScreen>
                   colors: [AppColors.bg, Colors.transparent],
                 ),
               ),
-              child: SizedBox(
-                width: double.infinity,
-                child: MaterialButton(
-                  onPressed: _done,
-                  color: AppColors.ink,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18)),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  elevation: 0,
-                  child: Text(
-                    isOnboarding ? 'Start tracking' : 'Save changes',
-                    style: AppTextStyles.button,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (state.totalPct != 100)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        state.totalPct < 100
+                            ? 'Allocate the remaining ${100 - state.totalPct}% in the Budget tab to continue'
+                            : 'Budget is ${state.totalPct - 100}% over — reduce a category to continue',
+                        style: AppTextStyles.caption.copyWith(
+                            color: state.totalPct > 100
+                                ? AppColors.dangerText
+                                : AppColors.muted),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: MaterialButton(
+                      onPressed: state.totalPct == 100 ? _done : null,
+                      color: AppColors.ink,
+                      disabledColor: AppColors.ink.withValues(alpha: 0.35),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18)),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      elevation: 0,
+                      child: Text(
+                        isOnboarding ? 'Start tracking' : 'Save changes',
+                        style: AppTextStyles.button,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ],
@@ -314,6 +329,7 @@ class _IncomePane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       child: Column(
@@ -330,7 +346,7 @@ class _IncomePane extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Text('\$',
+                    Text(state.currencySymbol,
                         style: AppTextStyles.displayMedium
                             .copyWith(color: AppColors.muted, fontSize: 28)),
                     const SizedBox(width: 4),
@@ -361,7 +377,7 @@ class _IncomePane extends StatelessWidget {
               label: 'Pay schedule',
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  value: 'Monthly',
+                  value: state.paySchedule,
                   isExpanded: true,
                   style: AppTextStyles.body,
                   items: const [
@@ -371,7 +387,9 @@ class _IncomePane extends StatelessWidget {
                     DropdownMenuItem(value: 'Weekly', child: Text('Weekly')),
                     DropdownMenuItem(value: 'Irregular', child: Text('Irregular')),
                   ],
-                  onChanged: (_) {},
+                  onChanged: (v) {
+                    if (v != null) context.read<AppState>().setPaySchedule(v);
+                  },
                 ),
               ),
             ),
@@ -379,7 +397,7 @@ class _IncomePane extends StatelessWidget {
               label: 'Cycle start',
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  value: '1st',
+                  value: state.cycleStart,
                   isExpanded: true,
                   style: AppTextStyles.body,
                   items: const [
@@ -387,9 +405,10 @@ class _IncomePane extends StatelessWidget {
                         value: '1st', child: Text('1st of the month')),
                     DropdownMenuItem(
                         value: '15th', child: Text('15th of the month')),
-                    DropdownMenuItem(value: 'Custom', child: Text('Custom')),
                   ],
-                  onChanged: (_) {},
+                  onChanged: (v) {
+                    if (v != null) context.read<AppState>().setCycleStart(v);
+                  },
                 ),
               ),
             ),
@@ -570,6 +589,44 @@ class _CatRowState extends State<_CatRow> {
     super.dispose();
   }
 
+  Future<void> _confirmDelete() async {
+    final state = context.read<AppState>();
+    final cat = widget.cat;
+    final txCount =
+        state.transactions.where((t) => t.categoryId == cat.id).length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Delete "${cat.name}"?',
+            style: AppTextStyles.displayMedium.copyWith(fontSize: 22)),
+        content: Text(
+          txCount > 0
+              ? 'This category has $txCount transaction${txCount == 1 ? '' : 's'}. '
+                  'They will stay in your history but lose their category.'
+              : 'This can’t be undone.',
+          style: AppTextStyles.body,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: Text('Cancel',
+                style:
+                    AppTextStyles.bodyMedium.copyWith(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: Text('Delete',
+                style: AppTextStyles.bodyMedium
+                    .copyWith(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) state.removeCategory(cat.id);
+  }
+
   void _pickColor() async {
     final state = context.read<AppState>();
     final color = await showDialog<Color>(
@@ -658,7 +715,8 @@ class _CatRowState extends State<_CatRow> {
 
           // Delete
           IconButton(
-            onPressed: () => state.removeCategory(cat.id),
+            onPressed: _confirmDelete,
+            tooltip: 'Delete category',
             icon: const Icon(Icons.close, size: 16, color: AppColors.muted),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
