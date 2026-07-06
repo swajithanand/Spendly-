@@ -141,6 +141,12 @@ danger sets with on-dark variants), and typography from `AppTextStyles`
 | `uuid` | Stable ids for categories and transactions |
 | `share_plus` / `path_provider` | CSV export sharing |
 
+### Scaling
+
+The app is local-only by design. For the roadmap to multi-device sync, real
+auth, and thousands of users — with current-vs-target architecture diagrams —
+see [SCALING.md](SCALING.md).
+
 ## Testing
 
 `test/widget_test.dart` holds 109 unit tests covering state initialization,
