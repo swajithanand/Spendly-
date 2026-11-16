@@ -11,8 +11,7 @@ enum BudgetStatus { onTrack, nearLimit, over, achieved }
 class BudgetHealth {
   BudgetHealth._();
 
-  static bool isSavings(CategoryModel cat) =>
-      cat.name.toLowerCase().contains('sav');
+  static bool isSavings(CategoryModel cat) => cat.isSavings;
 
   static BudgetStatus statusFor({
     required double spent,

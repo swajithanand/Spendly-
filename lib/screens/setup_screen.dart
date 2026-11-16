@@ -5,7 +5,9 @@ import '../core/colors.dart';
 import '../core/constants.dart';
 import '../core/currencies.dart';
 import '../core/text_styles.dart';
+import '../core/app_theme.dart';
 import '../state/app_state.dart';
+import '../state/theme_controller.dart';
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -46,7 +48,13 @@ class _SetupScreenState extends State<SetupScreen>
     final s = context.read<AppState>();
     if (s.totalPct != 100) return;
     s.completeSetup();
-    Navigator.pushReplacementNamed(context, '/main');
+    // Opened as Settings on top of the app: just go back. During onboarding
+    // there is nothing underneath, so move forward into the app.
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    } else {
+      Navigator.pushReplacementNamed(context, '/main');
+    }
   }
 
   @override
@@ -67,7 +75,7 @@ class _SetupScreenState extends State<SetupScreen>
                   if (!isOnboarding)
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                      icon: Icon(Icons.arrow_back_ios_new_rounded,
                           size: 18, color: AppColors.ink),
                     ),
                   Expanded(
@@ -98,11 +106,11 @@ class _SetupScreenState extends State<SetupScreen>
                 decoration: BoxDecoration(
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(14),
-                  boxShadow: const [
+                  boxShadow: [
                     BoxShadow(
-                      color: Color(0x14140F0F),
+                      color: AppColors.shadow,
                       blurRadius: 20,
-                      offset: Offset(0, 6),
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
@@ -115,7 +123,7 @@ class _SetupScreenState extends State<SetupScreen>
                   ),
                   indicatorSize: TabBarIndicatorSize.tab,
                   labelStyle: AppTextStyles.bodySmallMedium
-                      .copyWith(color: const Color(0xFFFAF8F2)),
+                      .copyWith(color: AppColors.onInk),
                   unselectedLabelStyle:
                       AppTextStyles.bodySmallMedium.copyWith(color: AppColors.muted),
                   dividerColor: Colors.transparent,
@@ -144,7 +152,7 @@ class _SetupScreenState extends State<SetupScreen>
             // CTA button
             Container(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
@@ -221,7 +229,7 @@ class _ProfilePane extends StatelessWidget {
                   child: Text(
                     state.userInitials,
                     style: AppTextStyles.displayMedium.copyWith(
-                      color: const Color(0xFFFAF8F2),
+                      color: AppColors.onInk,
                       fontSize: 26,
                     ),
                   ),
@@ -293,17 +301,45 @@ class _ProfilePane extends StatelessWidget {
           ]),
           const SizedBox(height: 16),
 
+          // Theme
+          const _ThemePicker(),
+          const SizedBox(height: 16),
+
+          // Remove sample data
+          if (state.hasDemoData) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => _confirmClearDemo(context),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.ink2,
+                  side: BorderSide(color: AppColors.hairline),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  backgroundColor: AppColors.surface,
+                ),
+                child: Text('Remove sample transactions',
+                    style: AppTextStyles.bodyMedium
+                        .copyWith(color: AppColors.ink2)),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+
           // Sign out
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
               onPressed: () {
                 context.read<AppState>().signOut();
-                Navigator.pushReplacementNamed(context, '/signin');
+                // Clear the whole stack so Back cannot return to the app.
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/signin', (_) => false);
               },
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.danger,
-                side: const BorderSide(color: AppColors.hairline),
+                side: BorderSide(color: AppColors.hairline),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -318,6 +354,54 @@ class _ProfilePane extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Asks before removing the sample transactions seeded on first launch.
+Future<void> _confirmClearDemo(BuildContext context) async {
+  final state = context.read<AppState>();
+  final count =
+      state.transactions.where((t) => state.demoTxIds.contains(t.id)).length;
+  final ok = await _confirm(
+    context,
+    title: 'Remove sample data?',
+    body: 'This removes the $count example transaction${count == 1 ? '' : 's'} '
+        'Spendly added on first launch. Anything you entered yourself stays.',
+    action: 'Remove',
+  );
+  if (ok) state.clearDemoData();
+}
+
+/// Shared yes/no dialog. Returns true only when the action is confirmed.
+Future<bool> _confirm(
+  BuildContext context, {
+  required String title,
+  required String body,
+  required String action,
+}) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (dialogCtx) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(title,
+          style: AppTextStyles.displayMedium.copyWith(fontSize: 22)),
+      content: Text(body, style: AppTextStyles.body),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx, false),
+          child: Text('Cancel',
+              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.muted)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx, true),
+          child: Text(action,
+              style:
+                  AppTextStyles.bodyMedium.copyWith(color: AppColors.danger)),
+        ),
+      ],
+    ),
+  );
+  return result == true;
 }
 
 // ── Income pane ───────────────────────────────────────────────────────────────
@@ -374,27 +458,7 @@ class _IncomePane extends StatelessWidget {
           const SizedBox(height: 16),
           _FieldStack(children: [
             _FieldRow(
-              label: 'Pay schedule',
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: state.paySchedule,
-                  isExpanded: true,
-                  style: AppTextStyles.body,
-                  items: const [
-                    DropdownMenuItem(value: 'Monthly', child: Text('Monthly')),
-                    DropdownMenuItem(
-                        value: 'Twice a month', child: Text('Twice a month')),
-                    DropdownMenuItem(value: 'Weekly', child: Text('Weekly')),
-                    DropdownMenuItem(value: 'Irregular', child: Text('Irregular')),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) context.read<AppState>().setPaySchedule(v);
-                  },
-                ),
-              ),
-            ),
-            _FieldRow(
-              label: 'Cycle start',
+              label: 'Budget cycle starts',
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: state.cycleStart,
@@ -413,6 +477,14 @@ class _IncomePane extends StatelessWidget {
               ),
             ),
           ]),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+            child: Text(
+              'Budgets and "spent" totals reset on this day. '
+              'Current cycle: ${state.cycleLabel()}.',
+              style: AppTextStyles.caption,
+            ),
+          ),
         ],
       ),
     );
@@ -450,7 +522,23 @@ class _BudgetPane extends StatelessWidget {
               itemBuilder: (_, i) {
                 final p = AppConstants.presets[i];
                 return GestureDetector(
-                  onTap: () => state.applyPreset(i),
+                  onTap: () async {
+                    final lost = state.orphansIfPresetApplied(i);
+                    if (lost > 0) {
+                      final ok = await _confirm(
+                        context,
+                        title: 'Switch to ${p.name}?',
+                        body: '$lost transaction${lost == 1 ? '' : 's'} '
+                            'belong${lost == 1 ? 's' : ''} to categories this '
+                            'preset does not have. They will stay in your '
+                            'history as "Uncategorized" until you reassign '
+                            'them.',
+                        action: 'Switch',
+                      );
+                      if (!ok) return;
+                    }
+                    state.applyPreset(i);
+                  },
                   child: Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
@@ -511,7 +599,7 @@ class _BudgetPane extends StatelessWidget {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 20, vertical: 14),
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         border: Border(
                             top: BorderSide(color: AppColors.hairlineSoft)),
                       ),
@@ -520,11 +608,11 @@ class _BudgetPane extends StatelessWidget {
                           Container(
                             width: 22,
                             height: 22,
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                               color: AppColors.surface2,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.add,
+                            child: Icon(Icons.add,
                                 size: 14, color: AppColors.ink2),
                           ),
                           const SizedBox(width: 10),
@@ -583,6 +671,17 @@ class _CatRowState extends State<_CatRow> {
   }
 
   @override
+  void didUpdateWidget(_CatRow old) {
+    super.didUpdateWidget(old);
+    // A preset can replace this category with a new object that keeps the
+    // same id (same name), so the text fields must pick up its values.
+    if (!identical(old.cat, widget.cat)) {
+      _nameCtrl.text = widget.cat.name;
+      _pctCtrl.text = '${widget.cat.pct}';
+    }
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _pctCtrl.dispose();
@@ -594,37 +693,17 @@ class _CatRowState extends State<_CatRow> {
     final cat = widget.cat;
     final txCount =
         state.transactions.where((t) => t.categoryId == cat.id).length;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Delete "${cat.name}"?',
-            style: AppTextStyles.displayMedium.copyWith(fontSize: 22)),
-        content: Text(
-          txCount > 0
-              ? 'This category has $txCount transaction${txCount == 1 ? '' : 's'}. '
-                  'They will stay in your history but lose their category.'
-              : 'This can’t be undone.',
-          style: AppTextStyles.body,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: Text('Cancel',
-                style:
-                    AppTextStyles.bodyMedium.copyWith(color: AppColors.muted)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            child: Text('Delete',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.danger)),
-          ),
-        ],
-      ),
+    final confirmed = await _confirm(
+      context,
+      title: 'Delete "${cat.name}"?',
+      body: txCount > 0
+          ? 'This category has $txCount transaction${txCount == 1 ? '' : 's'}. '
+              'They will stay in your history as "Uncategorized" until you '
+              'reassign them.'
+          : 'This can’t be undone.',
+      action: 'Delete',
     );
-    if (confirmed == true) state.removeCategory(cat.id);
+    if (confirmed) state.removeCategory(cat.id);
   }
 
   void _pickColor() async {
@@ -646,7 +725,7 @@ class _CatRowState extends State<_CatRow> {
       decoration: BoxDecoration(
         border: isFirst
             ? null
-            : const Border(
+            : Border(
                 top: BorderSide(color: AppColors.hairlineSoft)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -711,13 +790,29 @@ class _CatRowState extends State<_CatRow> {
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+
+          // Savings goal toggle
+          IconButton(
+            onPressed: () =>
+                state.updateCategorySavings(cat.id, !cat.isSavings),
+            tooltip: cat.isSavings
+                ? 'Savings goal: reaching it counts as a success'
+                : 'Mark as a savings goal',
+            icon: Icon(
+              cat.isSavings ? Icons.savings_rounded : Icons.savings_outlined,
+              size: 18,
+              color: cat.isSavings ? AppColors.success : AppColors.muted2,
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          ),
 
           // Delete
           IconButton(
             onPressed: _confirmDelete,
             tooltip: 'Delete category',
-            icon: const Icon(Icons.close, size: 16, color: AppColors.muted),
+            icon: Icon(Icons.close, size: 16, color: AppColors.muted),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
           ),
@@ -793,7 +888,7 @@ class _FieldRow extends StatelessWidget {
       decoration: BoxDecoration(
         border: isFirst
             ? null
-            : const Border(top: BorderSide(color: AppColors.hairlineSoft)),
+            : Border(top: BorderSide(color: AppColors.hairlineSoft)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Column(
@@ -815,3 +910,149 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(vertical: 2),
     );
+
+// ── Theme picker ──────────────────────────────────────────────────────────────
+
+/// The four colour themes as tappable swatches. Tapping one recolours the
+/// whole app at once and saves the choice.
+class _ThemePicker extends StatelessWidget {
+  const _ThemePicker();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<ThemeController>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Text('THEME', style: AppTextStyles.eyebrow),
+        ),
+        Row(
+          children: [
+            for (var i = 0; i < AppThemes.all.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(
+                child: _ThemeSwatch(
+                  theme: AppThemes.all[i],
+                  selected: AppThemes.all[i].id == controller.themeId,
+                  onTap: () => controller.setTheme(AppThemes.all[i].id),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ThemeSwatch extends StatelessWidget {
+  final AppThemeOption theme;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ThemeSwatch({
+    required this.theme,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = theme.palette;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${theme.name} theme',
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? AppColors.ink : AppColors.hairline,
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            children: [
+              // Miniature of the theme: page, a card with text, a button.
+              Container(
+                height: 52,
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: p.bg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: p.hairline),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        decoration: BoxDecoration(
+                          color: p.surface,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: p.accent,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Container(
+                                height: 3,
+                                decoration: BoxDecoration(
+                                  color: p.ink,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Container(
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: p.ink,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 7),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  theme.name,
+                  maxLines: 1,
+                  style: AppTextStyles.bodySmallMedium.copyWith(
+                    fontSize: 12,
+                    color: selected ? AppColors.ink : AppColors.muted,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 3),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

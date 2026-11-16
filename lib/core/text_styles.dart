@@ -44,7 +44,7 @@ class AppTextStyles {
         height: 1.05,
         letterSpacing: -0.44,
         fontWeight: FontWeight.w400,
-        color: AppColors.surface,
+        color: AppColors.onInkStrong,
         fontFeatures: [const FontFeature.tabularFigures()],
       );
 
@@ -140,6 +140,6 @@ class AppTextStyles {
         fontSize: 15,
         fontWeight: FontWeight.w500,
         letterSpacing: -0.075,
-        color: const Color(0xFFFAF8F2),
+        color: AppColors.onInk,
       );
 }

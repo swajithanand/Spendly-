@@ -6,6 +6,7 @@ import '../core/constants.dart';
 import '../core/text_styles.dart';
 import '../models/transaction_model.dart';
 import '../state/app_state.dart';
+import 'inventory_prompt.dart';
 
 /// Opens the transaction sheet. Pass [edit] to edit an existing transaction;
 /// omit it to create a new one.
@@ -53,9 +54,13 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
     final state = context.read<AppState>();
     state.draftSetLabel(_labelCtrl.text.trim());
     final isEdit = state.draft.editingId != null;
-    state.saveTransaction();
-    Navigator.pop(context);
+    final created = state.saveTransaction();
+    final navigator = Navigator.of(context);
+    navigator.pop();
     _showToast(context, state, isEdit);
+    // A new purchase of something kept at home (groceries, an appliance…)
+    // can go straight into the home inventory, now or as a reminder.
+    if (created != null) offerInventoryFor(navigator.context, created);
   }
 
   void _showToast(BuildContext context, AppState state, bool isEdit) {
@@ -75,7 +80,7 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
             const SizedBox(width: 10),
             Text(isEdit ? 'Updated · ${cat.name}' : 'Logged to ${cat.name}',
                 style: AppTextStyles.bodySmallMedium
-                    .copyWith(color: const Color(0xFFFAF8F2))),
+                    .copyWith(color: AppColors.onInk)),
           ],
         ),
         backgroundColor: AppColors.ink,
@@ -90,9 +95,9 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
   Widget build(BuildContext context) {
     final isEdit = context.watch<AppState>().draft.editingId != null;
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.bg,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -124,7 +129,7 @@ class _AddTransactionSheetState extends State<AddTransactionSheet> {
                   const Spacer(),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded,
+                    icon: Icon(Icons.close_rounded,
                         color: AppColors.ink2, size: 18),
                     style: IconButton.styleFrom(
                       backgroundColor: AppColors.surface2,
@@ -220,13 +225,23 @@ class _Keypad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 3,
+    // Fixed key height. Sizing keys from their width made the keypad fill
+    // the whole sheet in a wide or short window (desktop, landscape) and
+    // pushed the category pickers out of view.
+    // The keys shrink on short screens so that roughly 300px stays free for
+    // the amount, category and subcategory cards above (header and save
+    // button take about 180px together).
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final keyHeight = ((screenHeight - 480) / 4).clamp(34.0, 56.0);
+    return GridView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: 1.9,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        mainAxisExtent: keyHeight,
+      ),
       children: _keys.map((k) => _Key(k: k)).toList(),
     );
   }
@@ -245,13 +260,13 @@ class _Key extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(color: Color(0x05140F0F), offset: Offset(0, 1)),
+          boxShadow: [
+            BoxShadow(color: AppColors.shadowSoft, offset: const Offset(0, 1)),
           ],
         ),
         child: Center(
           child: isDel
-              ? const Icon(Icons.backspace_outlined,
+              ? Icon(Icons.backspace_outlined,
                   size: 20, color: AppColors.muted2)
               : Text(
                   k,
@@ -448,7 +463,7 @@ class _SubcategoryChips extends StatelessWidget {
               Text('SUBCATEGORY', style: AppTextStyles.eyebrow),
               if (selected.isNotEmpty && !draft.subcatManual) ...[
                 const SizedBox(width: 8),
-                const Icon(Icons.auto_awesome,
+                Icon(Icons.auto_awesome,
                     size: 12, color: AppColors.muted),
                 const SizedBox(width: 3),
                 Text('auto-detected',
@@ -480,7 +495,7 @@ class _SubcategoryChips extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.add,
+                          Icon(Icons.add,
                               size: 13, color: AppColors.ink2),
                           const SizedBox(width: 4),
                           Text(
@@ -516,7 +531,7 @@ class _SubcategoryChips extends StatelessWidget {
                           name,
                           style: AppTextStyles.bodySmallMedium.copyWith(
                               color: active
-                                  ? const Color(0xFFFAF8F2)
+                                  ? AppColors.onInk
                                   : AppColors.ink2),
                         ),
                       ],
@@ -608,7 +623,7 @@ class _LabelDateRow extends StatelessWidget {
                       Text(DateFormat('MMM d').format(date),
                           style: AppTextStyles.bodyMedium),
                       const SizedBox(width: 6),
-                      const Icon(Icons.calendar_today_outlined,
+                      Icon(Icons.calendar_today_outlined,
                           size: 14, color: AppColors.muted),
                     ],
                   ),

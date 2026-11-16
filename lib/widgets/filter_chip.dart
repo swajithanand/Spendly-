@@ -29,7 +29,7 @@ class SpendlyFilterChip extends StatelessWidget {
         child: Text(
           label,
           style: AppTextStyles.bodySmallMedium.copyWith(
-              color: active ? const Color(0xFFFAF8F2) : AppColors.ink2),
+              color: active ? AppColors.onInk : AppColors.ink2),
         ),
       ),
     );

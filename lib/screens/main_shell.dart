@@ -7,15 +7,26 @@ import '../widgets/add_transaction_sheet.dart';
 import 'home_screen.dart';
 import 'activity_screen.dart';
 import 'insights_screen.dart';
+import 'inventory_screen.dart';
+import '../widgets/inventory_item_sheet.dart';
 
 class MainShell extends StatelessWidget {
   const MainShell({super.key});
 
-  static const _screens = [HomeScreen(), ActivityScreen(), InsightsScreen()];
+  static const _screens = [
+    HomeScreen(),
+    ActivityScreen(),
+    InsightsScreen(),
+    InventoryScreen(),
+  ];
+
+  /// Index of the Inventory tab in [_screens].
+  static const inventoryTab = 3;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final onInventory = state.activeTab == inventoryTab;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -23,11 +34,17 @@ class MainShell extends StatelessWidget {
         index: state.activeTab,
         children: _screens,
       ),
+      // The + button adds whatever the current tab is about: an inventory
+      // item on the Inventory tab, a spending everywhere else.
       floatingActionButton: _SpendlyFab(
-        onTap: () => showTransactionSheet(context),
+        tooltip: onInventory ? 'Add inventory item' : 'Add spending',
+        onTap: () => onInventory
+            ? showInventoryItemSheet(context)
+            : showTransactionSheet(context),
       ),
       bottomNavigationBar: _SpendlyTabBar(
         current: state.activeTab,
+        inventoryBadge: state.inventoryBadgeCount,
         onTap: (i) => context.read<AppState>().setTab(i),
       ),
     );
@@ -38,17 +55,20 @@ class MainShell extends StatelessWidget {
 
 class _SpendlyFab extends StatelessWidget {
   final VoidCallback onTap;
-  const _SpendlyFab({required this.onTap});
+  final String tooltip;
+  const _SpendlyFab({required this.onTap, required this.tooltip});
 
   @override
   Widget build(BuildContext context) {
     return FloatingActionButton(
       onPressed: onTap,
+      // No hover tooltip here: with one, mouse clicks on the button were
+      // sometimes swallowed on web. [tooltip] is kept as the screen-reader label.
       backgroundColor: AppColors.ink,
-      foregroundColor: const Color(0xFFFAF8F2),
+      foregroundColor: AppColors.onInk,
       elevation: 8,
       shape: const CircleBorder(),
-      child: const Icon(Icons.add_rounded, size: 26),
+      child: Icon(Icons.add_rounded, size: 26, semanticLabel: tooltip),
     );
   }
 }
@@ -58,19 +78,26 @@ class _SpendlyFab extends StatelessWidget {
 class _SpendlyTabBar extends StatelessWidget {
   final int current;
   final ValueChanged<int> onTap;
-  const _SpendlyTabBar({required this.current, required this.onTap});
+
+  /// How many inventory things want attention (0 hides the badge).
+  final int inventoryBadge;
+  const _SpendlyTabBar({
+    required this.current,
+    required this.onTap,
+    this.inventoryBadge = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xF0FFFFFF),
+      decoration: BoxDecoration(
+        color: AppColors.tabBar,
         border: Border(top: BorderSide(color: AppColors.hairline, width: 1)),
         boxShadow: [
           BoxShadow(
-            color: Color(0x14140F0F),
+            color: AppColors.shadow,
             blurRadius: 28,
-            offset: Offset(0, -8),
+            offset: const Offset(0, -8),
           ),
         ],
       ),
@@ -101,6 +128,14 @@ class _SpendlyTabBar extends StatelessWidget {
                 active: current == 2,
                 onTap: () => onTap(2),
               ),
+              _TabItem(
+                icon: Icons.inventory_2_outlined,
+                activeIcon: Icons.inventory_2_rounded,
+                label: 'Inventory',
+                active: current == MainShell.inventoryTab,
+                badge: inventoryBadge,
+                onTap: () => onTap(MainShell.inventoryTab),
+              ),
             ],
           ),
         ),
@@ -115,6 +150,7 @@ class _TabItem extends StatelessWidget {
   final String label;
   final bool active;
   final VoidCallback onTap;
+  final int badge;
 
   const _TabItem({
     required this.icon,
@@ -122,6 +158,7 @@ class _TabItem extends StatelessWidget {
     required this.label,
     required this.active,
     required this.onTap,
+    this.badge = 0,
   });
 
   @override
@@ -145,10 +182,16 @@ class _TabItem extends StatelessWidget {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 150),
-              child: Icon(active ? activeIcon : icon,
-                  key: ValueKey(active), color: color, size: 22),
+            Badge(
+              isLabelVisible: badge > 0,
+              label: Text('$badge'),
+              backgroundColor: AppColors.danger,
+              textColor: Colors.white,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 150),
+                child: Icon(active ? activeIcon : icon,
+                    key: ValueKey(active), color: color, size: 22),
+              ),
             ),
             const SizedBox(height: 4),
             Text(

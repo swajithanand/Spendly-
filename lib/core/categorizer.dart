@@ -11,7 +11,7 @@ class SmartCategorizer {
     'Groceries': [
       'milk', 'cheese', 'bread', 'egg', 'butter', 'yogurt', 'veggie',
       'vegetable', 'fruit', 'meat', 'chicken', 'fish', 'rice', 'flour',
-      'grocer', 'supermarket', 'market', 'walmart', 'costco', 'aldi',
+      'grocer', 'grocery', 'groceries', 'supermarket', 'market', 'walmart', 'costco', 'aldi',
       'kroger', 'bigbasket', 'snack', 'cereal',
     ],
     'Dining': [
@@ -39,7 +39,7 @@ class SmartCategorizer {
       'show', 'ticket', 'festival',
     ],
     'Health': [
-      'pharmacy', 'medicine', 'doctor', 'dentist', 'gym', 'fitness',
+      'pharmacy', 'pharmacies', 'medicine', 'doctor', 'dentist', 'gym', 'fitness',
       'hospital', 'clinic', 'therapy', 'vitamin',
     ],
     'Shopping': [
@@ -47,7 +47,7 @@ class SmartCategorizer {
       'gadget', 'gift', 'flipkart', 'ikea',
     ],
     'Travel': [
-      'travel', 'flight', 'hotel', 'airbnb', 'trip', 'vacation', 'holiday',
+      'travel', 'travelling', 'traveling', 'flight', 'hotel', 'airbnb', 'trip', 'vacation', 'holiday',
       'visa', 'luggage',
     ],
     'Investments': [
@@ -55,7 +55,7 @@ class SmartCategorizer {
       'investment', 'brokerage', 'fidelity', '401k', 'ira',
     ],
     'Savings': [
-      'emergency', 'deposit', 'savings', 'fd', 'piggy',
+      'emergency', 'deposit', 'saving', 'fd', 'piggy',
     ],
     'Education': [
       'course', 'book', 'tuition', 'udemy', 'coursera', 'school', 'class',
@@ -106,9 +106,10 @@ class SmartCategorizer {
     return '';
   }
 
-  /// Word-boundary match so "gas" matches "gas station" but not "vegas".
-  /// Also matches the keyword as a prefix of a word ("grocer" → "groceries").
+  /// Whole-word match so "gas" matches "gas station" but not "vegas", and
+  /// "bar" does not match "barber". A plural ending is allowed ("egg" →
+  /// "eggs", "bus" → "buses").
   static bool _containsWord(String text, String kw) {
-    return RegExp('\\b${RegExp.escape(kw)}').hasMatch(text);
+    return RegExp('\\b${RegExp.escape(kw)}(?:s|es)?\\b').hasMatch(text);
   }
 }

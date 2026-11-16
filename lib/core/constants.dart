@@ -50,15 +50,15 @@ class AppConstants {
   static BoxDecoration get cardDecoration => BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x05140F0F),
-            offset: Offset(0, 1),
+            color: AppColors.shadowSoft,
+            offset: const Offset(0, 1),
           ),
           BoxShadow(
-            color: Color(0x14140F0F),
+            color: AppColors.shadow,
             blurRadius: 20,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
           ),
         ],
       );

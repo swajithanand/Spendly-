@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../core/colors.dart';
 import '../core/constants.dart';
+import '../core/money.dart';
 import '../core/text_styles.dart';
 import '../models/category_model.dart';
 import '../models/transaction_model.dart';
@@ -25,9 +26,24 @@ class InsightsScreen extends StatelessWidget {
         from: state.insightsFrom, to: state.insightsTo);
     final total = txs.fold(0.0, (s, t) => s + t.amount);
 
+    // Categories to report on. Transactions whose category was deleted get
+    // an "Uncategorized" bucket so the parts always add up to the total.
+    final orphans = state.txsForCat(txs, AppState.uncategorizedId);
+    final cats = [
+      ...state.categories,
+      if (orphans.isNotEmpty)
+        CategoryModel(
+          id: AppState.uncategorizedId,
+          name: 'Uncategorized',
+          pct: 0,
+          color: AppColors.muted2,
+          isSavings: false,
+        ),
+    ];
+
     // Per-category aggregation
-    final perCat = state.categories.map((c) {
-      final cTxs = txs.where((t) => t.categoryId == c.id).toList();
+    final perCat = cats.map((c) {
+      final cTxs = state.txsForCat(txs, c.id);
       return _CatData(
         cat: c,
         spent: cTxs.fold(0.0, (s, t) => s + t.amount),
@@ -36,9 +52,11 @@ class InsightsScreen extends StatelessWidget {
       );
     }).toList();
 
-    // Selected category for breakdown
-    final selectedId = state.insightsSelectedCatId ??
-        (state.categories.isNotEmpty ? state.categories.first.id : null);
+    // Selected category for breakdown (falls back to the first one when
+    // the remembered selection no longer exists).
+    final selectedId = cats.any((c) => c.id == state.insightsSelectedCatId)
+        ? state.insightsSelectedCatId
+        : (cats.isNotEmpty ? cats.first.id : null);
 
     return SafeArea(
       child: CustomScrollView(
@@ -127,10 +145,10 @@ class InsightsScreen extends StatelessWidget {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: state.categories.length,
+                itemCount: cats.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 6),
                 itemBuilder: (_, i) {
-                  final cat = state.categories[i];
+                  final cat = cats[i];
                   final active = cat.id == selectedId;
                   return GestureDetector(
                     onTap: () => context.read<AppState>().setInsightsCat(cat.id),
@@ -152,7 +170,7 @@ class InsightsScreen extends StatelessWidget {
                             height: 8,
                             decoration: BoxDecoration(
                               color: active
-                                  ? const Color(0xFFFAF8F2)
+                                  ? AppColors.onInk
                                   : cat.color,
                               shape: BoxShape.circle,
                             ),
@@ -162,7 +180,7 @@ class InsightsScreen extends StatelessWidget {
                             cat.name,
                             style: AppTextStyles.bodySmallMedium.copyWith(
                                 color: active
-                                    ? const Color(0xFFFAF8F2)
+                                    ? AppColors.onInk
                                     : AppColors.ink2),
                           ),
                         ],
@@ -180,7 +198,7 @@ class InsightsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
             sliver: SliverToBoxAdapter(
               child: _BreakdownCard(
-                selectedId: selectedId,
+                cat: cats.where((c) => c.id == selectedId).firstOrNull,
                 txs: txs,
                 state: state,
               ),
@@ -223,7 +241,7 @@ class _DonutCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fmt = NumberFormat('#,##0.##', 'en_US');
+    final fmt = context.watch<AppState>().money;
     final sym = state.currencySymbol;
     final hasData = total > 0;
 
@@ -344,7 +362,7 @@ class _DonutCard extends StatelessWidget {
     final now = DateTime.now();
     switch (period) {
       case 'week': return 'Last 7 days';
-      case 'month': return DateFormat('MMMM yyyy').format(now);
+      case 'month': return state.cycleLabel(now);
       case 'year': return '${now.year}';
       case 'all': return 'All time';
       case 'custom':
@@ -362,25 +380,21 @@ class _DonutCard extends StatelessWidget {
 // ── Breakdown card ────────────────────────────────────────────────────────────
 
 class _BreakdownCard extends StatelessWidget {
-  final String? selectedId;
+  final CategoryModel? cat;
   final List<TransactionModel> txs;
   final AppState state;
 
   const _BreakdownCard(
-      {required this.selectedId, required this.txs, required this.state});
+      {required this.cat, required this.txs, required this.state});
 
   @override
   Widget build(BuildContext context) {
-    final cat = selectedId != null
-        ? state.categories
-            .where((c) => c.id == selectedId)
-            .firstOrNull
-        : null;
+    final cat = this.cat;
     if (cat == null) return const SizedBox.shrink();
 
-    final cTxs = txs.where((t) => t.categoryId == cat.id).toList();
+    final cTxs = state.txsForCat(txs, cat.id);
     final catTotal = cTxs.fold(0.0, (s, t) => s + t.amount);
-    final fmt = NumberFormat('#,##0.##', 'en_US');
+    final fmt = context.watch<AppState>().money;
     final sym = state.currencySymbol;
 
     // Group by subcategory, with per-label detail inside each group
@@ -496,7 +510,7 @@ class _SubcatRow extends StatefulWidget {
   final double barPct;
   final Color color;
   final bool isFirst;
-  final NumberFormat fmt;
+  final MoneyFormat fmt;
   final String currencySymbol;
   final List<_LabelGroup> labels;
 
@@ -548,7 +562,7 @@ class _SubcatRowState extends State<_SubcatRow>
         decoration: BoxDecoration(
           border: widget.isFirst
               ? null
-              : const Border(top: BorderSide(color: AppColors.hairlineSoft)),
+              : Border(top: BorderSide(color: AppColors.hairlineSoft)),
         ),
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Column(
@@ -701,7 +715,7 @@ class _DateRangeRow extends StatelessWidget {
               ),
             ),
           ),
-          const Icon(Icons.arrow_forward, color: AppColors.muted2, size: 18),
+          Icon(Icons.arrow_forward, color: AppColors.muted2, size: 18),
           Expanded(
             child: GestureDetector(
               onTap: () => _pick(context, false),

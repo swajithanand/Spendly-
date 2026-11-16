@@ -25,7 +25,9 @@ class _SignInScreenState extends State<SignInScreen> {
   void _signIn() {
     final state = context.read<AppState>();
     state.signIn(email: _emailCtrl.text.trim());
-    Navigator.pushReplacementNamed(context, '/setup');
+    // Returning users who already finished setup go straight to the app.
+    Navigator.pushNamedAndRemoveUntil(
+        context, state.isOnboarding ? '/setup' : '/main', (_) => false);
   }
 
   @override
@@ -45,11 +47,11 @@ class _SignInScreenState extends State<SignInScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(28),
-                  boxShadow: const [
+                  boxShadow: [
                     BoxShadow(
-                      color: Color(0x14140F0F),
+                      color: AppColors.shadow,
                       blurRadius: 20,
-                      offset: Offset(0, 6),
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
@@ -103,7 +105,9 @@ class _SignInScreenState extends State<SignInScreen> {
                 child: TextButton(
                   onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Reset link sent')),
+                      const SnackBar(
+                          content: Text(
+                              'Password reset is not available yet. Sign-in is local to this device, so any password works.')),
                     );
                   },
                   child: Text(
@@ -122,13 +126,13 @@ class _SignInScreenState extends State<SignInScreen> {
               // Divider
               Row(
                 children: [
-                  const Expanded(child: Divider(color: AppColors.hairline)),
+                  Expanded(child: Divider(color: AppColors.hairline)),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Text('or continue with',
                         style: AppTextStyles.bodySmallMedium),
                   ),
-                  const Expanded(child: Divider(color: AppColors.hairline)),
+                  Expanded(child: Divider(color: AppColors.hairline)),
                 ],
               ),
               const SizedBox(height: 16),
@@ -193,11 +197,11 @@ class _InputField extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x14140F0F),
+            color: AppColors.shadow,
             blurRadius: 20,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -270,7 +274,7 @@ class _SocialButton extends StatelessWidget {
         label: Text(label, style: AppTextStyles.bodyMedium),
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 14),
-          side: const BorderSide(color: AppColors.hairline),
+          side: BorderSide(color: AppColors.hairline),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           backgroundColor: AppColors.surface,

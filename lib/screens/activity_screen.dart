@@ -60,7 +60,7 @@ class ActivityScreen extends StatelessWidget {
                         onPressed:
                             txs.isEmpty ? null : () => _exportCsv(context, txs),
                         tooltip: 'Export CSV',
-                        icon: const Icon(Icons.ios_share_rounded,
+                        icon: Icon(Icons.ios_share_rounded,
                             color: AppColors.ink2, size: 20),
                         style: IconButton.styleFrom(
                           backgroundColor: AppColors.surface,
@@ -193,7 +193,7 @@ class ActivityScreen extends StatelessWidget {
       SnackBar(
         content: Text(msg,
             style: AppTextStyles.bodySmallMedium
-                .copyWith(color: const Color(0xFFFAF8F2))),
+                .copyWith(color: AppColors.onInk)),
         backgroundColor: AppColors.ink,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 4),
@@ -223,7 +223,7 @@ class ActivityScreen extends StatelessWidget {
               children: [
                 Text(_relDay(day), style: AppTextStyles.bodyMedium),
                 Text(
-                  '${context.read<AppState>().currencySymbol}${NumberFormat('#,##0.##').format(dayTotal)} · ${items.length} item${items.length == 1 ? '' : 's'}',
+                  '${context.read<AppState>().currencySymbol}${context.read<AppState>().money.format(dayTotal)} · ${items.length} item${items.length == 1 ? '' : 's'}',
                   style: AppTextStyles.bodySmall,
                 ),
               ],
@@ -305,7 +305,7 @@ class _DateRangeRow extends StatelessWidget {
               ),
             ),
           ),
-          const Icon(Icons.arrow_forward, color: AppColors.muted2, size: 18),
+          Icon(Icons.arrow_forward, color: AppColors.muted2, size: 18),
           Expanded(
             child: GestureDetector(
               onTap: () => _pick(context, false),
@@ -337,7 +337,7 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fmt = NumberFormat('#,##0.##', 'en_US');
+    final fmt = context.watch<AppState>().money;
     final sym = context.watch<AppState>().currencySymbol;
     return Container(
       decoration: AppConstants.cardDecoration,
@@ -384,12 +384,38 @@ class _TxRow extends StatelessWidget {
   final TransactionModel tx;
   const _TxRow({required this.tx});
 
+  /// Deletes straight away and offers Undo, so a stray tap is recoverable.
+  void _delete(BuildContext context) {
+    final state = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final name = tx.label.trim().isNotEmpty ? tx.label.trim() : 'Transaction';
+    state.deleteTransaction(tx.id);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Deleted "$name"',
+              style: AppTextStyles.bodySmallMedium
+                  .copyWith(color: AppColors.onInk),
+              overflow: TextOverflow.ellipsis),
+          backgroundColor: AppColors.ink,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Undo',
+            textColor: AppColors.onInk,
+            onPressed: state.undoDelete,
+          ),
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final cat = state.categories.where((c) => c.id == tx.categoryId).firstOrNull;
-    final isSavings = cat?.name.toLowerCase().contains('sav') ?? false;
-    final fmt = NumberFormat('#,##0.##', 'en_US');
+    final isSavings = cat?.isSavings ?? false;
+    final fmt = context.watch<AppState>().money;
     final sym = state.currencySymbol;
     final time = DateFormat('h:mm a').format(tx.createdAt);
 
@@ -397,7 +423,7 @@ class _TxRow extends StatelessWidget {
       onTap: () => showTransactionSheet(context, edit: tx),
       behavior: HitTestBehavior.opaque,
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           border: Border(top: BorderSide(color: AppColors.hairlineSoft)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -426,7 +452,7 @@ class _TxRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     [
-                      cat?.name ?? '—',
+                      cat?.name ?? 'Uncategorized',
                       if (tx.subcategory.isNotEmpty) tx.subcategory,
                       time,
                     ].join('  ·  '),
@@ -444,11 +470,13 @@ class _TxRow extends StatelessWidget {
                 fontFeatures: [const FontFeature.tabularFigures()],
               ),
             ),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () => context.read<AppState>().deleteTransaction(tx.id),
-              child: const Icon(Icons.close_rounded,
+            IconButton(
+              onPressed: () => _delete(context),
+              tooltip: 'Delete transaction',
+              icon: Icon(Icons.close_rounded,
                   size: 16, color: AppColors.muted2),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             ),
           ],
         ),
@@ -468,9 +496,9 @@ class _EmptyState extends StatelessWidget {
             Container(
               width: 44,
               height: 44,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                   color: AppColors.surface2, shape: BoxShape.circle),
-              child: const Icon(Icons.receipt_long_outlined,
+              child: Icon(Icons.receipt_long_outlined,
                   color: AppColors.muted, size: 20),
             ),
             const SizedBox(height: 10),

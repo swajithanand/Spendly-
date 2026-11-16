@@ -29,7 +29,7 @@ budget-health alerts, insights charts, and CSV export.
 flutter pub get
 flutter run          # pick a device, or:
 flutter run -d chrome
-flutter test         # 109 unit tests
+flutter test         # 132 unit tests
 ```
 
 The app seeds demo transactions on first launch so every screen has data.
@@ -118,9 +118,10 @@ boundaries ("gas" matches "gas station", not "vegas"). Suggestions appear as
 ### Budget health
 
 `BudgetHealth.statusFor(spent, limit)` yields `onTrack` (< 80%),
-`nearLimit` (80–99%), or `over` (≥ 100%). Categories whose names look like
-savings/investments are treated as goals: reaching the limit reports
-`achieved` instead of `over`.
+`nearLimit` (80–99%), or `over` (≥ 100%). Categories flagged as savings goals
+(toggle in Settings → Budget; defaulted from the name) reach the limit as
+`achieved` instead of `over`. The "month" period is the budget cycle, which
+starts on the configured cycle-start day (1st or 15th).
 
 ### Design system
 
@@ -145,11 +146,13 @@ danger sets with on-dark variants), and typography from `AppTextStyles`
 
 The app is local-only by design. For the roadmap to multi-device sync, real
 auth, and thousands of users — with current-vs-target architecture diagrams —
-see [SCALING.md](SCALING.md).
+see [SCALING.md](SCALING.md). For the full plan (cloud options on Google and
+AWS, security, performance, and store deployment for iOS and Android) see
+[PRODUCTION_PLAYBOOK.md](PRODUCTION_PLAYBOOK.md).
 
 ## Testing
 
-`test/widget_test.dart` holds 109 unit tests covering state initialization,
+`test/widget_test.dart` and `test/fixes_test.dart` hold 132 unit tests covering state initialization,
 auth, budget math, transaction CRUD and editing, keypad input rules, period
 filtering, smart categorization, custom subcategories and emojis, budget
 status, CSV escaping, and persistence round-trips.

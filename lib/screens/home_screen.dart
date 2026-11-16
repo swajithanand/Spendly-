@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../core/budget_status.dart';
 import '../core/colors.dart';
@@ -8,6 +7,7 @@ import '../core/text_styles.dart';
 import '../models/category_model.dart';
 import '../state/app_state.dart';
 import '../widgets/add_transaction_sheet.dart';
+import 'main_shell.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -18,6 +18,11 @@ class HomeScreen extends StatelessWidget {
     final monthTxs = state.filtered('month');
     final totalSpent = monthTxs.fold(0.0, (s, t) => s + t.amount);
     final remaining = state.income - totalSpent;
+    // Spend whose category was deleted; shown as its own card so the cards
+    // always add up to the total above.
+    final orphanTxs = state.txsForCat(monthTxs, AppState.uncategorizedId);
+    final orphanSpent = orphanTxs.fold(0.0, (s, t) => s + t.amount);
+    final showOrphans = orphanTxs.isNotEmpty;
 
     return SafeArea(
       child: CustomScrollView(
@@ -34,7 +39,7 @@ class HomeScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          DateFormat('MMMM yyyy').format(DateTime.now()).toUpperCase(),
+                          state.cycleLabel().toUpperCase(),
                           style: AppTextStyles.eyebrow,
                         ),
                         const SizedBox(height: 6),
@@ -62,7 +67,7 @@ class HomeScreen extends StatelessWidget {
                       child: Text(
                         state.userInitials,
                         style: AppTextStyles.eyebrow.copyWith(
-                          color: const Color(0xFFFAF8F2),
+                          color: AppColors.onInk,
                           fontSize: 13,
                           letterSpacing: 0.5,
                         ),
@@ -83,9 +88,56 @@ class HomeScreen extends StatelessWidget {
                 income: state.income,
                 remaining: remaining,
                 categories: state.categories,
+                uncategorizedSpent: orphanSpent,
               ),
             ),
           ),
+
+          // Sample data notice
+          if (state.hasDemoData)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+                child: Container(
+                  decoration: AppConstants.cardDecoration,
+                  padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded,
+                          size: 16, color: AppColors.muted),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Showing sample transactions.',
+                          style: AppTextStyles.bodySmall,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => _confirmClearDemo(context),
+                        child: Text('Remove',
+                            style: AppTextStyles.bodySmallMedium
+                                .copyWith(color: AppColors.ink)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Home inventory notice: things due soon, purchases to add
+          if (state.inventoryBadgeCount > 0)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+                child: _InventoryNotice(
+                  due: state.inventoryAttention().length,
+                  pending: state.pendingInventory.length,
+                  onTap: () => context
+                      .read<AppState>()
+                      .setTab(MainShell.inventoryTab),
+                ),
+              ),
+            ),
 
           // Section label
           SliverToBoxAdapter(
@@ -99,9 +151,16 @@ class HomeScreen extends StatelessWidget {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
             sliver: SliverList.separated(
-              itemCount: state.categories.length,
+              itemCount: state.categories.length + (showOrphans ? 1 : 0),
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (ctx, i) {
+                if (i == state.categories.length) {
+                  return _UncategorizedCard(
+                    spent: orphanSpent,
+                    count: orphanTxs.length,
+                    onTap: () => context.read<AppState>().setTab(1),
+                  );
+                }
                 final cat = state.categories[i];
                 final spent = state.monthSpentForCat(cat.id);
                 final limit = state.income * cat.pct / 100;
@@ -131,6 +190,149 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+Future<void> _confirmClearDemo(BuildContext context) async {
+  final state = context.read<AppState>();
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialogCtx) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text('Remove sample data?',
+          style: AppTextStyles.displayMedium.copyWith(fontSize: 22)),
+      content: Text(
+        'This removes the example transactions Spendly added on first '
+        'launch. Anything you entered yourself stays.',
+        style: AppTextStyles.body,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx, false),
+          child: Text('Cancel',
+              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.muted)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogCtx, true),
+          child: Text('Remove',
+              style:
+                  AppTextStyles.bodyMedium.copyWith(color: AppColors.danger)),
+        ),
+      ],
+    ),
+  );
+  if (ok == true) state.clearDemoData();
+}
+
+// ── Inventory notice ──────────────────────────────────────────────────────────
+
+/// One-line pointer to the Inventory tab when something there needs the
+/// user: items expiring or due for service, or purchases awaiting details.
+class _InventoryNotice extends StatelessWidget {
+  final int due;
+  final int pending;
+  final VoidCallback onTap;
+
+  const _InventoryNotice({
+    required this.due,
+    required this.pending,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = [
+      if (due > 0) '$due item${due == 1 ? '' : 's'} due or overdue',
+      if (pending > 0)
+        '$pending purchase${pending == 1 ? '' : 's'} to add',
+    ];
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        decoration: AppConstants.cardDecoration,
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+        child: Row(
+          children: [
+            Icon(Icons.inventory_2_outlined,
+                size: 16,
+                color: due > 0 ? AppColors.warningText : AppColors.muted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Home inventory', style: AppTextStyles.bodySmallMedium),
+                  const SizedBox(height: 2),
+                  Text(parts.join('  ·  '), style: AppTextStyles.bodySmall),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                size: 18, color: AppColors.muted2),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Uncategorized card ────────────────────────────────────────────────────────
+
+/// Spend in the current cycle whose category has been deleted.
+class _UncategorizedCard extends StatelessWidget {
+  final double spent;
+  final int count;
+  final VoidCallback onTap;
+
+  const _UncategorizedCard({
+    required this.spent,
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: AppConstants.cardDecoration,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                      color: AppColors.muted2, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Uncategorized',
+                      style: AppTextStyles.bodySemiBold),
+                ),
+                Text(
+                  '${state.currencySymbol}${state.money.format(spent)}',
+                  style: AppTextStyles.bodySemiBold.copyWith(
+                      fontFeatures: [const FontFeature.tabularFigures()]),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$count transaction${count == 1 ? '' : 's'} with a deleted '
+              'category. Open one in Activity to reassign it.',
+              style: AppTextStyles.caption,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Overview card ─────────────────────────────────────────────────────────────
 
 class _OverviewCard extends StatelessWidget {
@@ -138,17 +340,19 @@ class _OverviewCard extends StatelessWidget {
   final double income;
   final double remaining;
   final List<CategoryModel> categories;
+  final double uncategorizedSpent;
 
   const _OverviewCard({
     required this.spent,
     required this.income,
     required this.remaining,
     required this.categories,
+    this.uncategorizedSpent = 0,
   });
 
   @override
   Widget build(BuildContext context) {
-    final fmt = NumberFormat('#,##0.##', 'en_US');
+    final fmt = context.watch<AppState>().money;
     final state = context.watch<AppState>();
     final sym = state.currencySymbol;
 
@@ -162,9 +366,9 @@ class _OverviewCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'SPENT THIS MONTH',
+            state.cycleStartDay == 1 ? 'SPENT THIS MONTH' : 'SPENT THIS CYCLE',
             style: AppTextStyles.eyebrow
-                .copyWith(color: const Color(0x8CFAF8F2)),
+                .copyWith(color: AppColors.onInk.withValues(alpha: 0.55)),
           ),
           const SizedBox(height: 6),
           RichText(
@@ -173,7 +377,7 @@ class _OverviewCard extends StatelessWidget {
                 text: sym,
                 style: AppTextStyles.numericHero.copyWith(
                     fontSize: 24,
-                    color: const Color(0x8CFAF8F2),
+                    color: AppColors.onInk.withValues(alpha: 0.55),
                     fontWeight: FontWeight.w400),
               ),
               TextSpan(
@@ -188,23 +392,23 @@ class _OverviewCard extends StatelessWidget {
               TextSpan(
                 text: 'of ',
                 style: AppTextStyles.bodySmall
-                    .copyWith(color: const Color(0x99FAF8F2)),
+                    .copyWith(color: AppColors.onInk.withValues(alpha: 0.6)),
               ),
               TextSpan(
                 text: '$sym${fmt.format(income)}',
                 style: AppTextStyles.bodySmallMedium
-                    .copyWith(color: const Color(0xFFFAF8F2)),
+                    .copyWith(color: AppColors.onInk),
               ),
               TextSpan(
                 text: '  ·  ',
                 style: AppTextStyles.bodySmall
-                    .copyWith(color: const Color(0x60FAF8F2)),
+                    .copyWith(color: AppColors.onInk.withValues(alpha: 0.376)),
               ),
               if (remaining >= 0)
                 TextSpan(
                   text: '$sym${fmt.format(remaining)} remaining',
                   style: AppTextStyles.bodySmall
-                      .copyWith(color: const Color(0x99FAF8F2)),
+                      .copyWith(color: AppColors.onInk.withValues(alpha: 0.6)),
                 )
               else
                 TextSpan(
@@ -231,12 +435,17 @@ class _OverviewCard extends StatelessWidget {
                       child: Container(color: cat.color),
                     );
                   }),
+                  if (uncategorizedSpent > 0 && income > 0)
+                    Flexible(
+                      flex: (uncategorizedSpent / income * 1000).round(),
+                      child: Container(color: AppColors.muted2),
+                    ),
                   Flexible(
                     flex: income > 0
                         ? ((remaining / income) * 1000).round().clamp(0, 1000)
                         : 1000,
                     child: Container(
-                        color: const Color(0x1AFAF8F2)),
+                        color: AppColors.onInk.withValues(alpha: 0.102)),
                   ),
                 ],
               ),
@@ -423,7 +632,7 @@ class _CategoryCardState extends State<_CategoryCard>
 
   @override
   Widget build(BuildContext context) {
-    final fmt = NumberFormat('#,##0.##', 'en_US');
+    final fmt = context.watch<AppState>().money;
     final sym = context.watch<AppState>().currencySymbol;
     final remaining = widget.limit - widget.spent;
     final isOver = remaining < 0;

@@ -1,12 +1,16 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/category_model.dart';
+import '../models/inventory_item.dart';
+import '../core/inventory_rules.dart';
 import '../models/transaction_model.dart';
 import '../core/categorizer.dart';
 import '../core/colors.dart';
 import '../core/constants.dart';
 import '../core/currencies.dart';
+import '../core/money.dart';
 
 class UserProfile {
   String name;
@@ -61,6 +65,11 @@ class AppState extends ChangeNotifier {
   // Emoji chosen for user-created subcategories (name → emoji)
   Map<String, String> customSubcatEmojis = {};
 
+  // Home inventory: things kept at home, and purchases the user said they
+  // would add details for later.
+  List<InventoryItem> inventory = [];
+  List<PendingInventory> pendingInventory = [];
+
   // Transaction draft
   DraftTx draft = DraftTx();
 
@@ -78,12 +87,33 @@ class AppState extends ChangeNotifier {
   DateTime? insightsTo;
   String? insightsSelectedCatId;
 
+  /// False until saved data has been read from disk.
+  bool loaded = false;
+
+  /// Set when some saved data could not be read. The unreadable text is
+  /// kept on disk under a `corruptBackup_` key instead of being overwritten.
+  String? loadError;
+
+  /// True once the user has finished onboarding on this device.
+  bool setupDone = false;
+
+  /// Ids of the sample transactions seeded on first launch.
+  Set<String> demoTxIds = {};
+
+  /// Completes when the initial load has finished.
+  late final Future<void> ready;
+
   AppState() {
-    _load();
+    ready = _load();
   }
 
   // ── Persistence ─────────────────────────────────────────
 
+  static const _kSignedIn = 'signedIn';
+  static const _kSetupDone = 'setupDone';
+  static const _kDemoTxIds = 'demoTxIds';
+  static const _kInventory = 'inventory';
+  static const _kPendingInventory = 'pendingInventory';
   static const _kIncome = 'income';
   static const _kCategories = 'categories';
   static const _kTransactions = 'transactions';
@@ -96,35 +126,91 @@ class AppState extends ChangeNotifier {
   static const _kCycleStart = 'cycleStart';
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final incomeVal = prefs.getDouble(_kIncome);
-    final catsJson = prefs.getString(_kCategories);
-    final txsJson = prefs.getString(_kTransactions);
-    customSubcategories = prefs.getStringList(_kCustomSubcats) ?? [];
-    final emojisJson = prefs.getString(_kCustomSubcatEmojis);
-    if (emojisJson != null) {
-      customSubcatEmojis =
-          Map<String, String>.from(jsonDecode(emojisJson) as Map);
-    }
-    user.name = prefs.getString(_kUserName) ?? user.name;
-    user.email = prefs.getString(_kUserEmail) ?? user.email;
-    user.currency = prefs.getString(_kUserCurrency) ?? user.currency;
-    paySchedule = prefs.getString(_kPaySchedule) ?? paySchedule;
-    cycleStart = prefs.getString(_kCycleStart) ?? cycleStart;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final corrupt = <String, String>{};
 
-    if (incomeVal != null && catsJson != null && txsJson != null) {
-      income = incomeVal;
-      categories = (jsonDecode(catsJson) as List)
-          .map((e) => CategoryModel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      transactions = (jsonDecode(txsJson) as List)
-          .map((e) => TransactionModel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      _migrateSubcategories();
-    } else {
-      _applyPreset(0);
-      _seedDemo();
+      // Decodes the JSON stored under [key]. Unreadable text is set aside
+      // (not thrown away) and null is returned.
+      T? decode<T>(String key, T Function(dynamic json) parse) {
+        final raw = prefs.getString(key);
+        if (raw == null) return null;
+        try {
+          return parse(jsonDecode(raw));
+        } catch (_) {
+          corrupt[key] = raw;
+          return null;
+        }
+      }
+
+      signedIn = prefs.getBool(_kSignedIn) ?? false;
+      setupDone = prefs.getBool(_kSetupDone) ?? false;
+      isOnboarding = !setupDone;
+      demoTxIds = (prefs.getStringList(_kDemoTxIds) ?? []).toSet();
+      customSubcategories = prefs.getStringList(_kCustomSubcats) ?? [];
+      customSubcatEmojis = decode(_kCustomSubcatEmojis,
+              (j) => Map<String, String>.from(j as Map)) ??
+          {};
+      user.name = prefs.getString(_kUserName) ?? user.name;
+      user.email = prefs.getString(_kUserEmail) ?? user.email;
+      user.currency = prefs.getString(_kUserCurrency) ?? user.currency;
+      paySchedule = prefs.getString(_kPaySchedule) ?? paySchedule;
+      cycleStart = prefs.getString(_kCycleStart) ?? cycleStart;
+      income = prefs.getDouble(_kIncome) ?? income;
+      inventory = decode(
+              _kInventory,
+              (j) => (j as List)
+                  .map((e) => InventoryItem.fromJson(e as Map<String, dynamic>))
+                  .toList()) ??
+          [];
+      pendingInventory = decode(
+              _kPendingInventory,
+              (j) => (j as List)
+                  .map((e) =>
+                      PendingInventory.fromJson(e as Map<String, dynamic>))
+                  .toList()) ??
+          [];
+
+      final hasSavedBudget = prefs.containsKey(_kCategories) ||
+          prefs.containsKey(_kTransactions);
+      final cats = decode(
+          _kCategories,
+          (j) => (j as List)
+              .map((e) => CategoryModel.fromJson(e as Map<String, dynamic>))
+              .toList());
+      final txs = decode(
+          _kTransactions,
+          (j) => (j as List)
+              .map((e) => TransactionModel.fromJson(e as Map<String, dynamic>))
+              .toList());
+
+      if (!hasSavedBudget) {
+        // First launch.
+        _applyPreset(0);
+        _seedDemo();
+      } else {
+        if (cats != null && cats.isNotEmpty) {
+          categories = cats;
+        } else {
+          _applyPreset(0);
+        }
+        transactions = txs ?? [];
+        _migrateSubcategories();
+      }
+
+      if (corrupt.isNotEmpty) {
+        for (final e in corrupt.entries) {
+          await prefs.setString('corruptBackup_${e.key}', e.value);
+        }
+        loadError = 'Some saved data could not be read. '
+            'A backup copy was kept on this device.';
+      }
+    } catch (_) {
+      // Storage itself is unavailable: run on defaults for this session.
+      if (categories.isEmpty) _applyPreset(0);
+      loadError = 'Saved data could not be opened.';
     }
+    loaded = true;
     notifyListeners();
   }
 
@@ -145,45 +231,97 @@ class AppState extends ChangeNotifier {
     if (changed) _save();
   }
 
-  Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_kIncome, income);
-    await prefs.setString(
-        _kCategories, jsonEncode(categories.map((c) => c.toJson()).toList()));
-    await prefs.setString(
-        _kTransactions, jsonEncode(transactions.map((t) => t.toJson()).toList()));
-    await prefs.setStringList(_kCustomSubcats, customSubcategories);
-    await prefs.setString(_kCustomSubcatEmojis, jsonEncode(customSubcatEmojis));
-    await prefs.setString(_kUserName, user.name);
-    await prefs.setString(_kUserEmail, user.email);
-    await prefs.setString(_kUserCurrency, user.currency);
-    await prefs.setString(_kPaySchedule, paySchedule);
-    await prefs.setString(_kCycleStart, cycleStart);
+  bool _dirty = false;
+  Future<void>? _saving;
+
+  /// Queues a save. Writes never overlap and never start before the initial
+  /// load has finished; changes made while a write is in flight are folded
+  /// into one follow-up write.
+  Future<void> _save() {
+    _dirty = true;
+    return _saving ??= _flush();
+  }
+
+  Future<void> _flush() async {
+    try {
+      await ready;
+      final prefs = await SharedPreferences.getInstance();
+      while (_dirty) {
+        _dirty = false;
+        // Snapshot everything first so one write is internally consistent.
+        final catsJson = jsonEncode(categories.map((c) => c.toJson()).toList());
+        final txsJson =
+            jsonEncode(transactions.map((t) => t.toJson()).toList());
+        final emojisJson = jsonEncode(customSubcatEmojis);
+        final inventoryJson =
+            jsonEncode(inventory.map((i) => i.toJson()).toList());
+        final pendingJson =
+            jsonEncode(pendingInventory.map((p) => p.toJson()).toList());
+        final subcats = List<String>.of(customSubcategories);
+        final demoIds = demoTxIds.toList();
+        final snapshot = (
+          signedIn: signedIn,
+          setupDone: setupDone,
+          income: income,
+          name: user.name,
+          email: user.email,
+          currency: user.currency,
+          paySchedule: paySchedule,
+          cycleStart: cycleStart,
+        );
+        await prefs.setBool(_kSignedIn, snapshot.signedIn);
+        await prefs.setBool(_kSetupDone, snapshot.setupDone);
+        await prefs.setDouble(_kIncome, snapshot.income);
+        await prefs.setString(_kCategories, catsJson);
+        await prefs.setString(_kTransactions, txsJson);
+        await prefs.setStringList(_kDemoTxIds, demoIds);
+        await prefs.setString(_kInventory, inventoryJson);
+        await prefs.setString(_kPendingInventory, pendingJson);
+        await prefs.setStringList(_kCustomSubcats, subcats);
+        await prefs.setString(_kCustomSubcatEmojis, emojisJson);
+        await prefs.setString(_kUserName, snapshot.name);
+        await prefs.setString(_kUserEmail, snapshot.email);
+        await prefs.setString(_kUserCurrency, snapshot.currency);
+        await prefs.setString(_kPaySchedule, snapshot.paySchedule);
+        await prefs.setString(_kCycleStart, snapshot.cycleStart);
+      }
+    } catch (_) {
+      // A failed write must not crash the app; the next change retries.
+    } finally {
+      _saving = null;
+    }
   }
 
   // ── Auth ────────────────────────────────────────────────
 
   void signIn({required String email, String name = ''}) {
     signedIn = true;
-    isOnboarding = true;
+    isOnboarding = !setupDone;
     user.email = email;
     if (name.isNotEmpty) user.name = name;
+    _save();
     notifyListeners();
   }
 
   void signOut() {
     signedIn = false;
     isOnboarding = true;
+    _save();
     notifyListeners();
   }
 
   void completeSetup() {
     isOnboarding = false;
+    setupDone = true;
+    _save();
     notifyListeners();
   }
 
   // ── Budget ──────────────────────────────────────────────
 
+  /// Replaces the categories with a preset. A new category that has the
+  /// same name as an existing one keeps its id, so its transactions stay
+  /// attached; see [orphansIfPresetApplied] for the ones that would not.
   void applyPreset(int index) {
     _applyPreset(index);
     _save();
@@ -191,7 +329,76 @@ class AppState extends ChangeNotifier {
   }
 
   void _applyPreset(int index) {
-    categories = AppConstants.presets[index].categories.map((c) => c.clone()).toList();
+    final oldIdByName = {
+      for (final c in categories) c.name.trim().toLowerCase(): c.id
+    };
+    categories = AppConstants.presets[index].categories
+        .map((c) => c.clone(id: oldIdByName[c.name.trim().toLowerCase()]))
+        .toList();
+  }
+
+  /// How many transactions would be left without a category if preset
+  /// [index] were applied now.
+  int orphansIfPresetApplied(int index) {
+    final keptNames = AppConstants.presets[index].categories
+        .map((c) => c.name.trim().toLowerCase())
+        .toSet();
+    final keptIds = categories
+        .where((c) => keptNames.contains(c.name.trim().toLowerCase()))
+        .map((c) => c.id)
+        .toSet();
+    final currentIds = categories.map((c) => c.id).toSet();
+    return transactions
+        .where((t) =>
+            currentIds.contains(t.categoryId) && !keptIds.contains(t.categoryId))
+        .length;
+  }
+
+  // ── Uncategorized ───────────────────────────────────────
+
+  /// Pseudo-category id for transactions whose category was deleted.
+  static const uncategorizedId = '__uncategorized';
+
+  bool hasCategory(String id) => categories.any((c) => c.id == id);
+
+  /// Transactions in [txs] belonging to [catId]; [uncategorizedId] selects
+  /// the ones whose category no longer exists.
+  List<TransactionModel> txsForCat(List<TransactionModel> txs, String catId) {
+    if (catId == uncategorizedId) {
+      final ids = categories.map((c) => c.id).toSet();
+      return txs.where((t) => !ids.contains(t.categoryId)).toList();
+    }
+    return txs.where((t) => t.categoryId == catId).toList();
+  }
+
+  // ── Budget cycle ────────────────────────────────────────
+
+  /// Day of the month the budget cycle starts on.
+  int get cycleStartDay => cycleStart == '15th' ? 15 : 1;
+
+  /// First day of the budget cycle containing [now].
+  DateTime cycleStartDate([DateTime? now]) {
+    final n = now ?? DateTime.now();
+    final day = cycleStartDay;
+    return n.day >= day
+        ? DateTime(n.year, n.month, day)
+        : DateTime(n.year, n.month - 1, day);
+  }
+
+  /// First day of the cycle after the one containing [now].
+  DateTime cycleEndDate([DateTime? now]) {
+    final s = cycleStartDate(now);
+    return DateTime(s.year, s.month + 1, s.day);
+  }
+
+  /// Human label for the current cycle: "November 2026" for calendar-month
+  /// cycles, otherwise the date span ("Nov 15 – Dec 14").
+  String cycleLabel([DateTime? now]) {
+    final start = cycleStartDate(now);
+    if (cycleStartDay == 1) return DateFormat('MMMM yyyy').format(start);
+    final last = cycleEndDate(now).subtract(const Duration(days: 1));
+    final f = DateFormat('MMM d');
+    return '${f.format(start)} – ${f.format(last)}';
   }
 
   int get totalPct => categories.fold(0, (s, c) => s + c.pct);
@@ -249,6 +456,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateCategorySavings(String id, bool isSavings) {
+    _cat(id)?.isSavings = isSavings;
+    _save();
+    notifyListeners();
+  }
+
   CategoryModel? _cat(String id) {
     try {
       return categories.firstWhere((c) => c.id == id);
@@ -266,12 +479,16 @@ class AppState extends ChangeNotifier {
 
   // ── Transactions ────────────────────────────────────────
 
-  void saveTransaction() {
+  /// Saves the draft. Returns the transaction when a NEW one was created
+  /// (null for an edit or an invalid draft), so the caller can offer
+  /// follow-ups such as adding it to the home inventory.
+  TransactionModel? saveTransaction() {
     final amt = _parseMoney(draft.amount);
-    if (amt <= 0 || draft.categoryId == null) return;
+    if (amt <= 0 || draft.categoryId == null) return null;
+    TransactionModel? created;
     if (draft.editingId != null) {
       final i = transactions.indexWhere((t) => t.id == draft.editingId);
-      if (i == -1) return;
+      if (i == -1) return null;
       transactions[i] = transactions[i].copyWith(
         amount: amt,
         categoryId: draft.categoryId,
@@ -280,20 +497,151 @@ class AppState extends ChangeNotifier {
         createdAt: draft.date,
       );
     } else {
-      transactions.add(TransactionModel(
+      created = TransactionModel(
         amount: amt,
         categoryId: draft.categoryId!,
         label: draft.label,
         subcategory: draft.subcategory,
         createdAt: draft.date,
-      ));
+      );
+      transactions.add(created);
+    }
+    _save();
+    notifyListeners();
+    return created;
+  }
+
+  // ── Home inventory ──────────────────────────────────────
+
+  /// Adds [item]. If it came from a purchase that was waiting for details,
+  /// that reminder is cleared.
+  void addInventoryItem(InventoryItem item) {
+    inventory.add(item);
+    if (item.txId != null) {
+      pendingInventory.removeWhere((p) => p.txId == item.txId);
     }
     _save();
     notifyListeners();
   }
 
+  void updateInventoryItem(InventoryItem item) {
+    final i = inventory.indexWhere((x) => x.id == item.id);
+    if (i == -1) return;
+    inventory[i] = item;
+    _save();
+    notifyListeners();
+  }
+
+  InventoryItem? _lastDeletedItem;
+  int _lastDeletedItemIndex = 0;
+
+  void deleteInventoryItem(String id) {
+    final i = inventory.indexWhere((x) => x.id == id);
+    if (i == -1) return;
+    _lastDeletedItem = inventory.removeAt(i);
+    _lastDeletedItemIndex = i;
+    _save();
+    notifyListeners();
+  }
+
+  bool undoDeleteInventoryItem() {
+    final item = _lastDeletedItem;
+    if (item == null) return false;
+    inventory.insert(_lastDeletedItemIndex.clamp(0, inventory.length), item);
+    _lastDeletedItem = null;
+    _save();
+    notifyListeners();
+    return true;
+  }
+
+  /// Changes an item's quantity by [delta], never going below zero.
+  void adjustInventoryQuantity(String id, double delta) {
+    final i = inventory.indexWhere((x) => x.id == id);
+    if (i == -1) return;
+    final q = (inventory[i].quantity + delta).clamp(0.0, double.infinity);
+    inventory[i] = inventory[i].copyWith(quantity: q);
+    _save();
+    notifyListeners();
+  }
+
+  /// Remembers that [tx] still needs inventory details ("remind me later").
+  void deferInventory(TransactionModel tx) {
+    final kind = InventoryRules.kindFor(tx);
+    if (pendingInventory.any((p) => p.txId == tx.id)) return;
+    pendingInventory.add(PendingInventory(
+      txId: tx.id,
+      name: InventoryRules.nameFor(tx),
+      kind: kind ?? InventoryKind.other,
+      purchasedAt: tx.createdAt,
+    ));
+    _save();
+    notifyListeners();
+  }
+
+  void dismissPendingInventory(String txId) {
+    pendingInventory.removeWhere((p) => p.txId == txId);
+    _save();
+    notifyListeners();
+  }
+
+  /// Items that are overdue or due within a week, most urgent first.
+  List<InventoryItem> inventoryAttention([DateTime? now]) {
+    final list = inventory.where((i) {
+      final s = i.status(now: now);
+      return s == DueStatus.overdue || s == DueStatus.soon;
+    }).toList()
+      ..sort((a, b) => a.daysLeft(now)!.compareTo(b.daysLeft(now)!));
+    return list;
+  }
+
+  /// Number of things on the Inventory tab that want the user's attention.
+  int get inventoryBadgeCount =>
+      inventoryAttention().length + pendingInventory.length;
+
+  TransactionModel? _lastDeleted;
+  int _lastDeletedIndex = 0;
+  bool _lastDeletedWasDemo = false;
+  PendingInventory? _lastDeletedPending;
+
   void deleteTransaction(String id) {
-    transactions.removeWhere((t) => t.id == id);
+    final i = transactions.indexWhere((t) => t.id == id);
+    if (i == -1) return;
+    _lastDeleted = transactions.removeAt(i);
+    _lastDeletedIndex = i;
+    _lastDeletedPending =
+        pendingInventory.where((p) => p.txId == id).firstOrNull;
+    pendingInventory.removeWhere((p) => p.txId == id);
+    _lastDeletedWasDemo = demoTxIds.remove(id);
+    _save();
+    notifyListeners();
+  }
+
+  /// Puts back the most recently deleted transaction. Returns false when
+  /// there is nothing to restore.
+  bool undoDelete() {
+    final tx = _lastDeleted;
+    if (tx == null) return false;
+    transactions.insert(_lastDeletedIndex.clamp(0, transactions.length), tx);
+    if (_lastDeletedWasDemo) demoTxIds.add(tx.id);
+    final pending = _lastDeletedPending;
+    if (pending != null) pendingInventory.add(pending);
+    _lastDeleted = null;
+    _lastDeletedPending = null;
+    _save();
+    notifyListeners();
+    return true;
+  }
+
+  // ── Sample data ─────────────────────────────────────────
+
+  bool get hasDemoData => transactions.any((t) => demoTxIds.contains(t.id));
+
+  /// Removes the sample transactions seeded on first launch, leaving
+  /// everything the user entered.
+  void clearDemoData() {
+    transactions.removeWhere((t) => demoTxIds.contains(t.id));
+    demoTxIds.clear();
+    _lastDeleted = null;
     _save();
     notifyListeners();
   }
@@ -311,7 +659,8 @@ class AppState extends ChangeNotifier {
   void openDraftForEdit(TransactionModel tx) {
     draft = DraftTx(
       amount: _formatAmount(tx.amount),
-      categoryId: tx.categoryId,
+      // A deleted category leaves nothing selected, so the user must pick.
+      categoryId: hasCategory(tx.categoryId) ? tx.categoryId : null,
       label: tx.label,
       subcategory: tx.subcategory,
       subcatManual: tx.subcategory.isNotEmpty,
@@ -424,7 +773,8 @@ class AppState extends ChangeNotifier {
             .subtract(const Duration(days: 6));
         return transactions.where((t) => !t.createdAt.isBefore(start)).toList();
       case 'month':
-        final start = DateTime(now.year, now.month, 1);
+        // The current budget cycle, which starts on [cycleStartDay].
+        final start = cycleStartDate(now);
         return transactions.where((t) => !t.createdAt.isBefore(start)).toList();
       case 'year':
         final start = DateTime(now.year, 1, 1);
@@ -502,6 +852,9 @@ class AppState extends ChangeNotifier {
 
   String get currencySymbol => Currencies.symbolFor(user.currency);
 
+  /// Amount formatter for the user's currency.
+  MoneyFormat get money => MoneyFormat(user.currency);
+
   // ── Seed data ───────────────────────────────────────────
 
   void _seedDemo() {
@@ -546,13 +899,15 @@ class AppState extends ChangeNotifier {
     for (final s in samples) {
       final ts = DateTime(now.year, now.month, now.day, s.h)
           .subtract(Duration(days: s.d));
-      transactions.add(TransactionModel(
+      final tx = TransactionModel(
         amount: s.amt,
         categoryId: id(s.cat),
         label: s.label,
         subcategory: SmartCategorizer.suggest(s.label),
         createdAt: ts,
-      ));
+      );
+      transactions.add(tx);
+      demoTxIds.add(tx.id);
     }
   }
 }

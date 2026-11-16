@@ -1,17 +1,33 @@
 import 'package:flutter/material.dart';
+import 'app_theme.dart';
 
 class AppColors {
-  static const Color bg = Color(0xFFF2F0EA);
-  static const Color surface = Color(0xFFFFFFFF);
-  static const Color surface2 = Color(0xFFF8F6F1);
-  static const Color ink = Color(0xFF14130F);
-  static const Color ink2 = Color(0xFF2E2D28);
-  static const Color muted = Color(0xFF8B8880);
-  static const Color muted2 = Color(0xFFC3BFB5);
-  static const Color hairline = Color(0xFFE8E4DA);
-  static const Color hairlineSoft = Color(0xFFEFEBE1);
+  /// The active theme's colours. Set by ThemeController; everything below
+  /// that is a getter reads from it, so those tokens are not compile-time
+  /// constants and cannot be used inside `const` expressions.
+  static AppPalette current = AppPalette.paper;
 
-  // Category palette
+  static Color get bg => current.bg;
+  static Color get surface => current.surface;
+  static Color get surface2 => current.surface2;
+  static Color get tabBar => current.tabBar;
+  static Color get ink => current.ink;
+  static Color get ink2 => current.ink2;
+  static Color get muted => current.muted;
+  static Color get muted2 => current.muted2;
+  static Color get hairline => current.hairline;
+  static Color get hairlineSoft => current.hairlineSoft;
+
+  /// Content (text, icons) placed on top of [ink].
+  static Color get onInk => current.onInk;
+  static Color get onInkStrong => current.onInkStrong;
+
+  static Color get shadow => current.shadow;
+  static Color get shadowSoft => current.shadowSoft;
+  static Color get accent => current.accent;
+
+  // Category palette. Saved to disk as user data, so these are the same in
+  // every theme.
   static const Color indigo = Color(0xFF5B6CFF);
   static const Color coral = Color(0xFFF26B5A);
   static const Color emerald = Color(0xFF2BB47B);
@@ -30,19 +46,19 @@ class AppColors {
   ];
 
   // Semantic
-  static const Color success = Color(0xFF2BB47B);
-  static const Color successBg = Color(0xFFE6F4EC);
-  static const Color successText = Color(0xFF1d7a52);
-  static const Color warning = Color(0xFFE8A33A);
-  static const Color warningBg = Color(0xFFFBF0DC);
-  static const Color warningText = Color(0xFF96660F);
-  static const Color danger = Color(0xFFb8412b);
-  static const Color dangerBg = Color(0xFFFBE6E1);
-  static const Color dangerText = Color(0xFF9c3a26);
-  static const Color savingsText = Color(0xFF1d7a52);
+  static Color get success => current.success;
+  static Color get successBg => current.successBg;
+  static Color get successText => current.successText;
+  static Color get warning => current.warning;
+  static Color get warningBg => current.warningBg;
+  static Color get warningText => current.warningText;
+  static Color get danger => current.danger;
+  static Color get dangerBg => current.dangerBg;
+  static Color get dangerText => current.dangerText;
+  static Color get savingsText => current.savingsText;
 
-  // Semantic, tuned for the dark overview card
-  static const Color successOnDark = Color(0xFF8FD7B6);
-  static const Color warningOnDark = Color(0xFFF0C685);
-  static const Color dangerOnDark = Color(0xFFF2A492);
+  // Semantic, tuned for the overview card (drawn on ink)
+  static Color get successOnDark => current.successOnDark;
+  static Color get warningOnDark => current.warningOnDark;
+  static Color get dangerOnDark => current.dangerOnDark;
 }
